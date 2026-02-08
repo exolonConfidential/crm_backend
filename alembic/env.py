@@ -21,12 +21,35 @@ from app.db.models.base import Base
 from app.db.models.location import Location
 from app.db.models.owner import Owner
 from app.db.models.property import Property
-from app.db.models.location import Location
-
+from app.db.models.insurance_details import InsuranceDetails
 
 target_metadata = Base.metadata
 
 
+# ---- IMPORTANT: IGNORE POSTGIS TABLES ----
+def include_object(object, name, type_, reflected, compare_to):
+    POSTGIS_TABLES = {
+        "spatial_ref_sys",
+        "layer",
+        "topology",
+        "geography_columns",
+        "geometry_columns",
+        "raster_columns",
+        "raster_overviews",
+    }
+
+    # ignore PostGIS internal tables
+    if type_ == "table" and name in POSTGIS_TABLES:
+        return False
+
+    # ignore entire topology schema
+    if getattr(object, "schema", None) in {"topology", "tiger", "tiger_data"}:
+        return False
+
+    return True
+
+
+# ---- OFFLINE MIGRATIONS ----
 def run_migrations_offline():
 
     url = config.get_main_option("sqlalchemy.url")
@@ -36,12 +59,15 @@ def run_migrations_offline():
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_object=include_object,   # ✅ applied here
+        compare_type=True,
     )
 
     with context.begin_transaction():
         context.run_migrations()
 
 
+# ---- ONLINE MIGRATIONS (ASYNC) ----
 async def run_migrations_online():
 
     connectable = async_engine_from_config(
@@ -56,6 +82,8 @@ async def run_migrations_online():
             context.configure(
                 connection=connection,
                 target_metadata=target_metadata,
+                include_object=include_object,   # ✅ THIS WAS MISSING
+                compare_type=True,
             )
 
             with context.begin_transaction():
@@ -65,6 +93,8 @@ async def run_migrations_online():
 
     await connectable.dispose()
 
+
+# ---- ENTRYPOINT ----
 def run():
 
     if context.is_offline_mode():

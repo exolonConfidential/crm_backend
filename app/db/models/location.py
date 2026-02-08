@@ -1,4 +1,5 @@
-from sqlalchemy import String, Integer, Float, BigInteger
+from geoalchemy2 import Geography
+from sqlalchemy import String, Integer, Float, BigInteger, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.models.base import Base
@@ -7,6 +8,9 @@ from app.db.models.base import Base
 class Location(Base):
 
     __tablename__ = "locations"
+    __table_args__ = (
+        UniqueConstraint("osm_type", "osm_id", name="uq_osm_location"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
 
@@ -37,6 +41,10 @@ class Location(Base):
     bbox_lat_max: Mapped[float] = mapped_column(Float)
     bbox_lon_min: Mapped[float] = mapped_column(Float)
     bbox_lon_max: Mapped[float] = mapped_column(Float)
+
+    geom: Mapped[str] = mapped_column(
+        Geography("POINT", srid=4326)
+    )
 
     property = relationship(
         "Property",

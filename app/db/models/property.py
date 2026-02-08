@@ -63,3 +63,9 @@ class Property(Base):
         back_populates="property",
         uselist=False,
     )
+
+    insurance_records = relationship(
+        "InsuranceDetails",
+        back_populates="property",
+        cascade="all, delete-orphan"
+    )
