@@ -48,3 +48,7 @@ class LocationRepository:
 
         result = await session.execute(stmt)
         return result.scalars().all()
+    
+    @staticmethod
+    async def get_by_place_id(session, place_id: int):
+        return await session.scalar(select(Location).where(Location.place_id == place_id))

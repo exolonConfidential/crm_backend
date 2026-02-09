@@ -27,7 +27,6 @@ class PropertyResponse(BaseModel):
     expected_rent: float | None
     rental_available_date: date | None
 
-    owner: OwnerResponse
 
     class Config:
         from_attributes = True

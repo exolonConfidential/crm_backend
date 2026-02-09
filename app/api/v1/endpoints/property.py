@@ -4,14 +4,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_async_session
 from app.services.property_service import PropertyService
-from app.schemas.property_schema import PropertyResponse
+from app.schemas.property_owner_response_schema import PropertyOwnerResponse
 from app.schemas.full_entry_schema import FullEntryCreateRequest
 from app.schemas.property_update_request import PropertyOwnerUpdateRequest
+from app.schemas.full_entry_response_schema import FullEntryCreateResponse
 
 router = APIRouter(prefix="/property", tags=["Property"])
 
 
-@router.get("/by-location/{location_id}", response_model=PropertyResponse)
+@router.get("/by-location/{location_id}", response_model=PropertyOwnerResponse)
 async def get_property_by_location(
     location_id: int,
     session: AsyncSession = Depends(get_async_session),
@@ -34,7 +35,7 @@ async def get_property_by_location(
 
     return property_obj
 
-@router.post("/create-full", response_model=PropertyResponse)
+@router.post("/create-full", response_model=FullEntryCreateResponse)
 async def create_full_entry(
     payload: FullEntryCreateRequest,
     session: AsyncSession = Depends(get_async_session),
@@ -55,12 +56,10 @@ async def create_full_entry(
         return property_obj
 
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to create property entry"
-        )
+        print("CREATE FULL ERROR:", e)
+        raise HTTPException(status_code=500, detail=str(e))
     
-@router.put("/{property_id}", response_model=PropertyResponse)
+@router.put("/{property_id}", response_model=PropertyOwnerResponse)
 async def update_property_and_owner(
     property_id: int = Path(..., gt=0),
     payload: PropertyOwnerUpdateRequest = ...,

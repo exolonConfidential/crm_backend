@@ -1,3 +1,6 @@
+from sqlalchemy import select
+from db.models.owner import Owner
+
 class OwnerRepository:
 
     @staticmethod
@@ -6,3 +9,11 @@ class OwnerRepository:
             setattr(owner, key, value)
         await session.flush()
         return owner
+    
+    @staticmethod
+    async def get_by_phone(session, phone: str):
+        return await session.scalar(select(Owner).where(Owner.phone_number == phone))
+    
+    @staticmethod
+    async def get_by_email(session, email: str):
+        return await session.scalar(select(Owner).where(Owner.email == email))

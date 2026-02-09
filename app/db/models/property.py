@@ -2,7 +2,7 @@ from sqlalchemy import String, Integer, Float, Date, Boolean, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.models.base import Base
 from datetime import date
-
+from app.db.models.insurance_details import InsuranceDetails
 
 class Property(Base):
 
