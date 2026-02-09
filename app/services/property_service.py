@@ -31,132 +31,127 @@ class PropertyService:
     @staticmethod
     async def create_full_entry(session, location_data, owner_data, property_data):
 
-        # -------------------------
-        # 1. FIND OR VALIDATE OWNER
-        # -------------------------
+        async def _execute():
+            # -------------------------
+            # 1. FIND OR VALIDATE OWNER
+            # -------------------------
 
-        existing_owner_by_phone = await session.scalar(
-            select(Owner).where(Owner.phone_number == owner_data.phone_number)
-        )
-
-        existing_owner_by_email = await session.scalar(
-            select(Owner).where(Owner.email == owner_data.email)
-        )
-
-        if existing_owner_by_phone and existing_owner_by_email:
-            # same owner → reuse
-            owner = existing_owner_by_phone
-
-        elif existing_owner_by_phone and not existing_owner_by_email:
-            raise HTTPException(
-                status_code=409,
-                detail="Phone number already linked to different email"
+            existing_owner_by_phone = await session.scalar(
+                select(Owner).where(Owner.phone_number == owner_data.phone_number)
             )
 
-        elif existing_owner_by_email and not existing_owner_by_phone:
-            raise HTTPException(
-                status_code=409,
-                detail="Email already linked to different phone number"
+            existing_owner_by_email = await session.scalar(
+                select(Owner).where(Owner.email == owner_data.email)
             )
 
-        else:
-            owner = None
+            if existing_owner_by_phone and existing_owner_by_email:
+                owner = existing_owner_by_phone
 
-        # -------------------------
-        # 2. FIND LOCATION
-        # -------------------------
+            elif existing_owner_by_phone and not existing_owner_by_email:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Phone number already linked to different email"
+                )
 
-        location = await LocationRepository.get_by_osm(
-            session,
-            location_data.osm_type,
-            location_data.osm_id
-        )
+            elif existing_owner_by_email and not existing_owner_by_phone:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Email already linked to different phone number"
+                )
+            else:
+                owner = None
 
-        if not location:
-            location = await session.scalar(
-                select(Location).where(Location.place_id == location_data.place_id)
-            )
+            # -------------------------
+            # 2. FIND LOCATION
+            # -------------------------
 
-        # -------------------------
-        # 3. CHECK EXISTING PROPERTY
-        # -------------------------
-
-        if location:
-            existing_property = await PropertyRepository.get_by_location_id(
+            location = await LocationRepository.get_by_osm(
                 session,
-                location.id
+                location_data.osm_type,
+                location_data.osm_id
             )
 
-            if existing_property:
-                # idempotent return
-                await session.refresh(existing_property, ["owner", "location"])
+            if not location:
+                location = await session.scalar(
+                    select(Location).where(Location.place_id == location_data.place_id)
+                )
 
-                return {
-                    "location": existing_property.location,
-                    "owner": existing_property.owner,
-                    "property": existing_property
-                }
+            # -------------------------
+            # 3. CHECK EXISTING PROPERTY
+            # -------------------------
 
-        # -------------------------
-        # 4. CREATE FLOW
-        # -------------------------
+            if location:
+                existing_property = await PropertyRepository.get_by_location_id(
+                    session,
+                    location.id
+                )
 
-        try:
-            async with session.begin():
+                if existing_property:
+                    await session.refresh(existing_property, ["owner", "location"])
+                    return {
+                        "location": existing_property.location,
+                        "owner": existing_property.owner,
+                        "property": existing_property
+                    }
 
-                # create owner if not reused
+            # -------------------------
+            # 4. CREATE FLOW
+            # -------------------------
+
+            try:
                 if not owner:
                     owner = Owner(**owner_data.dict())
                     session.add(owner)
                     await session.flush()
 
-                # create location if not exists
                 if not location:
                     location = await LocationRepository.create(
                         session,
                         location_data.dict()
                     )
 
-                # create property
                 prop_data = property_data.dict()
                 prop_data["owner_id"] = owner.id
                 prop_data["location_id"] = location.id
 
                 property_obj = Property(**prop_data)
                 session.add(property_obj)
+                await session.flush()
 
-        except IntegrityError:
-            # race condition safety
-            existing_property = await PropertyRepository.get_by_location_id(
-                session,
-                location.id
-            )
+            except IntegrityError:
+                existing_property = await PropertyRepository.get_by_location_id(
+                    session,
+                    location.id
+                )
 
-            if existing_property:
-                await session.refresh(existing_property, ["owner", "location"])
-                return {
-                    "location": existing_property.location,
-                    "owner": existing_property.owner,
-                    "property": existing_property
-                }
+                if existing_property:
+                    await session.refresh(existing_property, ["owner", "location"])
+                    return {
+                        "location": existing_property.location,
+                        "owner": existing_property.owner,
+                        "property": existing_property
+                    }
 
-            raise HTTPException(
-                status_code=409,
-                detail="Conflict occurred while creating entry"
-            )
+                raise HTTPException(
+                    status_code=409,
+                    detail="Conflict occurred while creating entry"
+                )
 
-        # -------------------------
-        # 5. RETURN CREATED OBJECT
-        # -------------------------
+            await session.refresh(property_obj)
+            await session.refresh(property_obj, ["owner", "location"])
 
-        await session.refresh(property_obj)
-        await session.refresh(property_obj, ["owner", "location"])
+            return {
+                "location": property_obj.location,
+                "owner": property_obj.owner,
+                "property": property_obj
+            }
 
-        return {
-            "location": property_obj.location,
-            "owner": property_obj.owner,
-            "property": property_obj
-        }
+        # TRANSACTION CONTROL HERE
+        if session.in_transaction():
+            return await _execute()
+        else:
+            async with session.begin():
+                return await _execute()
 
 
     @staticmethod
@@ -222,18 +217,19 @@ class PropertyService:
         # 3. APPLY UPDATES
         # -------------------------
         try:
-            async with session.begin():
+            if owner_data:
+                for k, v in owner_data.items():
+                    if k not in {"id"}:
+                        setattr(owner, k, v)
 
-                if owner_data:
-                    for k, v in owner_data.items():
-                        if k not in {"id"}:
-                            setattr(owner, k, v)
+            if property_data:
+                for k, v in property_data.items():
+                    # block foreign key tampering
+                    if k not in {"id", "owner_id", "location_id"}:
+                        setattr(property_obj, k, v)
 
-                if property_data:
-                    for k, v in property_data.items():
-                        # block foreign key tampering
-                        if k not in {"id", "owner_id", "location_id"}:
-                            setattr(property_obj, k, v)
+            # flush sends SQL UPDATE but does NOT commit
+            await session.flush()
 
         except IntegrityError:
             raise HTTPException(

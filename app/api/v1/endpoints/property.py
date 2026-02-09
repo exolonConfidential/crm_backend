@@ -55,9 +55,10 @@ async def create_full_entry(
 
         return property_obj
 
+    except HTTPException:
+        raise
     except Exception as e:
-        print("CREATE FULL ERROR:", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
     
 @router.put("/{property_id}", response_model=PropertyOwnerResponse)
 async def update_property_and_owner(
